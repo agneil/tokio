@@ -12,8 +12,8 @@ use std::path::Path;
 ///
 /// [std]: https://doc.rust-lang.org/std/fs/fn.hard_link.html
 pub async fn hard_link(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
-    let src = src.as_ref().to_owned();
-    let dst = dst.as_ref().to_owned();
+    let src = src.as_ref();
+    let dst = dst.as_ref();
 
     asyncify(move || std::fs::hard_link(src, dst)).await
 }

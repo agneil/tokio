@@ -10,6 +10,6 @@ use std::path::Path;
 ///
 /// [std]: https://doc.rust-lang.org/std/fs/fn.symlink_metadata.html
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(|| std::fs::symlink_metadata(path)).await
 }

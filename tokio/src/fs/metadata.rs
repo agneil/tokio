@@ -6,6 +6,6 @@ use std::path::Path;
 
 /// Queries the file system metadata for a path.
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(|| std::fs::metadata(path)).await
 }

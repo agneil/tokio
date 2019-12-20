@@ -10,8 +10,8 @@ use std::path::Path;
 ///
 /// This is an async version of [`std::fs::rename`](std::fs::rename)
 pub async fn rename(from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
-    let from = from.as_ref().to_owned();
-    let to = to.as_ref().to_owned();
+    let from = from.as_ref();
+    let to = to.as_ref();
 
     asyncify(move || std::fs::rename(from, to)).await
 }

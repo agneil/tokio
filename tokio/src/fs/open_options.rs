@@ -89,8 +89,8 @@ impl OpenOptions {
     ///
     /// [`open`]: https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.open
     pub async fn open(&self, path: impl AsRef<Path>) -> io::Result<File> {
-        let path = path.as_ref().to_owned();
-        let opts = self.0.clone();
+        let path = path.as_ref();
+        let opts = &self.0;
 
         let std = asyncify(move || opts.open(path)).await?;
         Ok(File::from_std(std))

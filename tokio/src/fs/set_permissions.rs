@@ -10,6 +10,6 @@ use std::path::Path;
 ///
 /// [std]: https://doc.rust-lang.org/std/fs/fn.set_permissions.html
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(|| std::fs::set_permissions(path, perm)).await
 }

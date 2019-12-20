@@ -115,7 +115,7 @@ impl File {
     /// # }
     /// ```
     pub async fn open(path: impl AsRef<Path>) -> io::Result<File> {
-        let path = path.as_ref().to_owned();
+        let path = path.as_ref();
         let std = asyncify(|| sys::File::open(path)).await?;
 
         Ok(File::from_std(std))
@@ -150,7 +150,7 @@ impl File {
     /// # }
     /// ```
     pub async fn create(path: impl AsRef<Path>) -> io::Result<File> {
-        let path = path.as_ref().to_owned();
+        let path = path.as_ref();
         let std_file = asyncify(move || sys::File::create(path)).await?;
         Ok(File::from_std(std_file))
     }
@@ -254,7 +254,7 @@ impl File {
     pub async fn sync_all(&mut self) -> io::Result<()> {
         self.complete_inflight().await;
 
-        let std = self.std.clone();
+        let std = &*self.std;
         asyncify(move || std.sync_all()).await
     }
 
@@ -283,7 +283,7 @@ impl File {
     pub async fn sync_data(&mut self) -> io::Result<()> {
         self.complete_inflight().await;
 
-        let std = self.std.clone();
+        let std = &*self.std;
         asyncify(move || std.sync_data()).await
     }
 
@@ -369,7 +369,7 @@ impl File {
     /// # }
     /// ```
     pub async fn metadata(&self) -> io::Result<Metadata> {
-        let std = self.std.clone();
+        let std = &*self.std;
         asyncify(move || std.metadata()).await
     }
 
@@ -389,7 +389,7 @@ impl File {
     /// # }
     /// ```
     pub async fn try_clone(&self) -> io::Result<File> {
-        let std = self.std.clone();
+        let std = &*self.std;
         let std_file = asyncify(move || std.try_clone()).await?;
         Ok(File::from_std(std_file))
     }
@@ -473,7 +473,7 @@ impl File {
     /// # }
     /// ```
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
-        let std = self.std.clone();
+        let std = &*self.std;
         asyncify(move || std.set_permissions(perm)).await
     }
 

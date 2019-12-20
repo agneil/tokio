@@ -79,12 +79,12 @@ pub use self::write::write;
 
 use std::io;
 
-pub(crate) async fn asyncify<F, T>(f: F) -> io::Result<T>
+pub(crate) async fn asyncify<'a, F, T>(f: F) -> io::Result<T>
 where
-    F: FnOnce() -> io::Result<T> + Send + 'static,
+    F: FnOnce() -> io::Result<T> + Send + Sync + 'a,
     T: Send + 'static,
 {
-    match sys::run(f).await {
+    match unsafe { sys::run_scoped(f) }.await {
         Ok(res) => res,
         Err(_) => Err(io::Error::new(
             io::ErrorKind::Other,
@@ -99,5 +99,6 @@ mod sys {
 
     // TODO: don't rename
     pub(crate) use crate::runtime::spawn_blocking as run;
+    pub(crate) use crate::runtime::spawn_scoped as run_scoped;
     pub(crate) type Blocking<T> = crate::task::JoinHandle<'static, T>;
 }

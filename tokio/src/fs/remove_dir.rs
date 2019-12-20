@@ -7,6 +7,6 @@ use std::path::Path;
 ///
 /// This is an async version of [`std::fs::remove_dir`](std::fs::remove_dir)
 pub async fn remove_dir(path: impl AsRef<Path>) -> io::Result<()> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(move || std::fs::remove_dir(path)).await
 }

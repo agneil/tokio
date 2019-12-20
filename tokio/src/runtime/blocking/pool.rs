@@ -93,7 +93,19 @@ where
     })
 }
 
-/// Run the provided function on an executor dedicated to blocking operations.
+/// Run the provided function on an executor dedicated to blocking operations
+/// with a custom lifetime scope.
+///
+/// # Safety
+///
+/// You must make sure that the returned `JoinHandle` is either awaited to
+/// completion, or that its destructor is run before anything it borrows goes
+/// out of scope.
+/// 
+/// Among other things, this means that `mem::forget`:ing the Handle is _not_
+/// safe.
+///
+/// This can be used safely through the spawn_scoped! macro.
 pub(crate) unsafe fn spawn_scoped<'a, F, R>(func: F) -> JoinHandle<'a, R>
 where
     F: FnOnce() -> R + Send + Sync + 'a,

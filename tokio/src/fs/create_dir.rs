@@ -9,6 +9,6 @@ use std::path::Path;
 ///
 /// [std]: https://doc.rust-lang.org/std/fs/fn.create_dir.html
 pub async fn create_dir(path: impl AsRef<Path>) -> io::Result<()> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(move || std::fs::create_dir(path)).await
 }

@@ -19,6 +19,6 @@ use std::{io, path::Path};
 /// # }
 /// ```
 pub async fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(move || std::fs::read(path)).await
 }

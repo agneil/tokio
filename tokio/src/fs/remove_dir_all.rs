@@ -9,6 +9,6 @@ use std::path::Path;
 ///
 /// [std]: https://doc.rust-lang.org/std/fs/fn.remove_dir_all.html
 pub async fn remove_dir_all(path: impl AsRef<Path>) -> io::Result<()> {
-    let path = path.as_ref().to_owned();
+    let path = path.as_ref();
     asyncify(move || std::fs::remove_dir_all(path)).await
 }
