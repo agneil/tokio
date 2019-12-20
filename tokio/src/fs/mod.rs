@@ -99,5 +99,5 @@ mod sys {
 
     // TODO: don't rename
     pub(crate) use crate::runtime::spawn_blocking as run;
-    pub(crate) use crate::task::JoinHandle as Blocking;
+    pub(crate) type Blocking<T> = crate::task::JoinHandle<'static, T>;
 }

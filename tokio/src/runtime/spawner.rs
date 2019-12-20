@@ -36,7 +36,7 @@ impl Spawner {
 
 cfg_rt_core! {
     impl Spawner {
-        pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+        pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
         where
             F: Future + Send + 'static,
             F::Output: Send + 'static,

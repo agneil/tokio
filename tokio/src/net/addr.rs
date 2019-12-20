@@ -233,7 +233,7 @@ pub(crate) mod sealed {
         #[derive(Debug)]
         pub enum MaybeReady {
             Ready(Option<SocketAddr>),
-            Blocking(JoinHandle<io::Result<vec::IntoIter<SocketAddr>>>),
+            Blocking(JoinHandle<'static, io::Result<vec::IntoIter<SocketAddr>>>),
         }
 
         #[doc(hidden)]

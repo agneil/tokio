@@ -118,7 +118,7 @@ doc_rt_core! {
     /// ```text
     /// error[E0391]: cycle detected when processing `main`
     /// ```
-    pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
+    pub fn spawn<T>(task: T) -> JoinHandle<'static, T::Output>
     where
         T: Future + Send + 'static,
         T::Output: Send + 'static,

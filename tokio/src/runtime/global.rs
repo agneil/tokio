@@ -25,7 +25,7 @@ thread_local! {
 // ===== global spawn fns =====
 
 /// Spawns a future on the default executor.
-pub(crate) fn spawn<T>(future: T) -> JoinHandle<T::Output>
+pub(crate) fn spawn<T>(future: T) -> JoinHandle<'static, T::Output>
 where
     T: Future + Send + 'static,
     T::Output: Send + 'static,

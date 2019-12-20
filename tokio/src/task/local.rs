@@ -134,7 +134,7 @@ cfg_rt_util! {
     ///     }).await.unwrap();
     /// });
     /// ```
-    pub fn spawn_local<F>(future: F) -> JoinHandle<F::Output>
+    pub fn spawn_local<F>(future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,
@@ -203,7 +203,7 @@ impl LocalSet {
     /// });
     /// ```
     /// [`spawn_local`]: fn.spawn_local.html
-    pub fn spawn_local<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub fn spawn_local<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,

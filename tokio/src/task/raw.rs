@@ -67,17 +67,17 @@ cfg_rt_util! {
 }
 
 impl RawTask {
-    pub(super) fn new_joinable<T, S>(task: T) -> RawTask
+    pub(super) fn new_joinable<'a, T, S>(task: T) -> RawTask
     where
-        T: Future + Send + 'static,
+        T: Future + Send + 'a,
         S: ScheduleSendOnly,
     {
         RawTask::new::<_, S>(task, State::new_joinable())
     }
 
-    fn new<T, S>(task: T, state: State) -> RawTask
+    fn new<'a, T, S>(task: T, state: State) -> RawTask
     where
-        T: Future + 'static,
+        T: Future + 'a,
         S: Schedule,
     {
         let ptr = Box::into_raw(Cell::new::<S>(task, state));

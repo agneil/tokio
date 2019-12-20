@@ -78,7 +78,7 @@ where
     }
 
     /// Spawn a future onto the thread pool
-    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -155,7 +155,7 @@ where
 
 impl Spawner {
     /// Spawn a future onto the thread pool
-    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -221,7 +221,7 @@ impl SchedulerPriv {
     ///
     /// Must be called from the same thread that holds the `BasicScheduler`
     /// value.
-    pub(super) unsafe fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub(super) unsafe fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

@@ -209,7 +209,7 @@
 //! [`thread::yield_now`]: std::thread::yield_now
 cfg_blocking! {
     mod blocking;
-    pub use blocking::spawn_blocking;
+    pub use blocking::{spawn_blocking, spawn_scoped};
 
     cfg_rt_threaded! {
         pub use blocking::block_in_place;
@@ -305,9 +305,9 @@ cfg_rt_core! {
     pub(crate) trait ScheduleSendOnly: Schedule + Send + Sync {}
 
     /// Create a new task with an associated join handle
-    pub(crate) fn joinable<T, S>(task: T) -> (Task<S>, JoinHandle<T::Output>)
+    pub(crate) fn joinable<'a, T, S>(task: T) -> (Task<S>, JoinHandle<'a, T::Output>)
     where
-        T: Future + Send + 'static,
+        T: Future + Send + 'a,
         S: ScheduleSendOnly,
     {
         let raw = RawTask::new_joinable::<_, S>(task);
@@ -324,7 +324,7 @@ cfg_rt_core! {
 
     cfg_rt_util! {
         /// Create a new `!Send` task with an associated join handle
-        pub(crate) fn joinable_local<T, S>(task: T) -> (Task<S>, JoinHandle<T::Output>)
+        pub(crate) fn joinable_local<'a, T, S>(task: T) -> (Task<S>, JoinHandle<'a, T::Output>)
         where
             T: Future + 'static,
             S: Schedule,

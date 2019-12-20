@@ -201,7 +201,7 @@ mod blocking;
 use blocking::BlockingPool;
 
 cfg_blocking_impl! {
-    pub(crate) use blocking::spawn_blocking;
+    pub(crate) use blocking::{spawn_blocking, spawn_scoped};
 }
 
 mod builder;
@@ -384,7 +384,7 @@ impl Runtime {
     /// This function panics if the spawn fails. Failure occurs if the executor
     /// is currently at capacity and is unable to spawn a new future.
     #[cfg(feature = "rt-core")]
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

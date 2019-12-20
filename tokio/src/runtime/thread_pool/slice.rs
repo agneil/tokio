@@ -55,7 +55,7 @@ impl Set {
         }
     }
 
-    pub(crate) fn spawn_typed<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub(crate) fn spawn_typed<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

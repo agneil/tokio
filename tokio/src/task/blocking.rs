@@ -55,11 +55,22 @@ cfg_blocking! {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<R>
+    pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<'static, R>
     where
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
         crate::runtime::spawn_blocking(f)
+    }
+
+
+    /// Run the provided closure on a thread where blocking is acceptable in a
+    /// scoped fashion.
+    pub unsafe fn spawn_scoped<'a, F, R>(f: F) -> JoinHandle<'a, R>
+    where
+        F: FnOnce() -> R + Send + Sync + 'a,
+        R: Send + 'static,
+    {
+        crate::runtime::spawn_scoped(f)
     }
 }

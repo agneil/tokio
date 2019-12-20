@@ -13,7 +13,7 @@ use self::State::*;
 
 /// `T` should not implement _both_ Read and Write.
 #[derive(Debug)]
-pub(crate) struct Blocking<T> {
+pub(crate) struct Blocking<T: 'static> {
     inner: Option<T>,
     state: State<T>,
     /// true if the lower IO layer needs flushing
@@ -29,7 +29,7 @@ pub(crate) struct Buf {
 pub(crate) const MAX_BUF: usize = 16 * 1024;
 
 #[derive(Debug)]
-enum State<T> {
+enum State<T: 'static> {
     Idle(Option<Buf>),
     Busy(sys::Blocking<(io::Result<usize>, Buf, T)>),
 }

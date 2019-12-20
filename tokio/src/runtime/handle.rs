@@ -71,7 +71,7 @@ cfg_rt_core! {
         ///
         /// This function panics if the spawn fails. Failure occurs if the executor
         /// is currently at capacity and is unable to spawn a new future.
-        pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+        pub fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
         where
             F: Future + Send + 'static,
             F::Output: Send + 'static,

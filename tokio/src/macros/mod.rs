@@ -15,3 +15,8 @@ mod ready;
 
 #[macro_use]
 mod thread_local;
+
+cfg_blocking! {
+    #[macro_use]
+    mod blocking;
+}

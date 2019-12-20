@@ -76,17 +76,17 @@ doc_rt_core! {
     /// [`task::spawn`]: crate::task::spawn()
     /// [`task::spawn_blocking`]: crate::task::spawn_blocking
     /// [`std::thread::JoinHandle`]: std::thread::JoinHandle
-    pub struct JoinHandle<T> {
+    pub struct JoinHandle<'a, T> {
         raw: Option<RawTask>,
-        _p: PhantomData<T>,
+        _p: PhantomData<&'a T>,
     }
 }
 
-unsafe impl<T: Send> Send for JoinHandle<T> {}
-unsafe impl<T: Send> Sync for JoinHandle<T> {}
+unsafe impl<'a, T: Send> Send for JoinHandle<'a, T> {}
+unsafe impl<'a, T: Send> Sync for JoinHandle<'a, T> {}
 
-impl<T> JoinHandle<T> {
-    pub(super) fn new(raw: RawTask) -> JoinHandle<T> {
+impl<'a, T> JoinHandle<'a, T> {
+    pub(super) fn new(raw: RawTask) -> JoinHandle<'a, T> {
         JoinHandle {
             raw: Some(raw),
             _p: PhantomData,
@@ -94,9 +94,9 @@ impl<T> JoinHandle<T> {
     }
 }
 
-impl<T> Unpin for JoinHandle<T> {}
+impl<'a, T> Unpin for JoinHandle<'a, T> {}
 
-impl<T> Future for JoinHandle<T> {
+impl<'a, T> Future for JoinHandle<'a, T> {
     type Output = super::Result<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -135,7 +135,7 @@ impl<T> Future for JoinHandle<T> {
     }
 }
 
-impl<T> Drop for JoinHandle<T> {
+impl<'a, T> Drop for JoinHandle<'a, T> {
     fn drop(&mut self) {
         if let Some(raw) = self.raw.take() {
             if raw.header().state.drop_join_handle_fast() {
@@ -147,7 +147,7 @@ impl<T> Drop for JoinHandle<T> {
     }
 }
 
-impl<T> fmt::Debug for JoinHandle<T>
+impl<'a, T> fmt::Debug for JoinHandle<'a, T>
 where
     T: fmt::Debug,
 {

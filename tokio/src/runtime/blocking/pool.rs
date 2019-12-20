@@ -77,13 +77,30 @@ thread_local! {
 const KEEP_ALIVE: Duration = Duration::from_secs(10);
 
 /// Run the provided function on an executor dedicated to blocking operations.
-pub(crate) fn spawn_blocking<F, R>(func: F) -> JoinHandle<R>
+pub(crate) fn spawn_blocking<F, R>(func: F) -> JoinHandle<'static, R>
 where
     F: FnOnce() -> R + Send + 'static,
 {
     BLOCKING.with(|cell| {
         let schedule = match cell.get() {
             Some(ptr) => unsafe { &*ptr },
+            None => panic!("not currently running on the Tokio runtime."),
+        };
+
+        let (task, handle) = task::joinable(BlockingTask::new(func));
+        schedule.schedule(task);
+        handle
+    })
+}
+
+/// Run the provided function on an executor dedicated to blocking operations.
+pub(crate) unsafe fn spawn_scoped<'a, F, R>(func: F) -> JoinHandle<'a, R>
+where
+    F: FnOnce() -> R + Send + Sync + 'a,
+{
+    BLOCKING.with(|cell| {
+        let schedule = match cell.get() {
+            Some(ptr) => &*ptr,
             None => panic!("not currently running on the Tokio runtime."),
         };
 

@@ -28,7 +28,7 @@ impl Spawner {
     }
 
     /// Spawn a future onto the thread pool
-    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub(crate) fn spawn<F>(&self, future: F) -> JoinHandle<'static, F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
