@@ -193,6 +193,9 @@ pub struct Receiver<T> {
     /// State shared with all receivers and senders.
     shared: Arc<Shared<T>>,
 
+    /// Entry in the waiter `LinkedList`
+    waiter: Pin<Box<UnsafeCell<Waiter>>>,
+
     /// Next position to read from
     next: u64,
 }
@@ -318,6 +321,42 @@ struct Tail {
     waiters: LinkedList<Waiter, <Waiter as linked_list::Link>::Target>,
 }
 
+impl Tail {
+    /// Remove the waiter from the waiter list.
+    ///
+    /// Note: this function takes `&mut self`, which is proof that it is held
+    /// exclusively (e.g. it's accessed under a lock).
+    ///
+    /// The `cleanup` argument determines whether the dropped waiter should be
+    /// "cleaned up" for later re-use. This is necessary in case it's dropped
+    /// from a temporary, like [Recv], because the same node structure might be
+    /// used for future receive operations.
+    fn remove_waiter(&mut self, waiter: &Pin<Box<UnsafeCell<Waiter>>>, cleanup: bool) {
+        let queued = waiter.with(|ptr| unsafe { (*ptr).queued });
+
+        if !queued {
+            return;
+        }
+
+        // Remove the node
+        //
+        // safety: tail lock is held and the wait node is verified to be in
+        // the list.
+        unsafe {
+            waiter.with_mut(|ptr| {
+                self.waiters.remove((&mut *ptr).into());
+
+                if cleanup {
+                    // We need to clean up the state of the node, since it
+                    // might be re-used later.
+                    (*ptr).queued = false;
+                    (*ptr).waker = None;
+                }
+            });
+        }
+    }
+}
+
 /// Slot in the buffer
 struct Slot<T> {
     /// Remaining number of receivers that are expected to see this value.
@@ -356,6 +395,18 @@ struct Waiter {
     _p: PhantomPinned,
 }
 
+impl Waiter {
+    /// Construct an empty waiter node.
+    fn empty() -> Self {
+        Self {
+            queued: false,
+            waker: None,
+            pointers: linked_list::Pointers::new(),
+            _p: PhantomPinned,
+        }
+    }
+}
+
 struct RecvGuard<'a, T> {
     slot: RwLockReadGuard<'a, Slot<T>>,
 }
@@ -364,9 +415,6 @@ struct RecvGuard<'a, T> {
 struct Recv<'a, T> {
     /// Receiver being waited on
     receiver: &'a mut Receiver<T>,
-
-    /// Entry in the waiter `LinkedList`
-    waiter: UnsafeCell<Waiter>,
 }
 
 unsafe impl<'a, T: Send> Send for Recv<'a, T> {}
@@ -452,6 +500,7 @@ pub fn channel<T: Clone>(mut capacity: usize) -> (Sender<T>, Receiver<T>) {
 
     let rx = Receiver {
         shared: shared.clone(),
+        waiter: Box::pin(UnsafeCell::new(Waiter::empty())),
         next: 0,
     };
 
@@ -650,7 +699,13 @@ fn new_receiver<T>(shared: Arc<Shared<T>>) -> Receiver<T> {
 
     drop(tail);
 
-    Receiver { shared, next }
+    let waiter = Box::pin(UnsafeCell::new(Waiter::empty()));
+
+    Receiver {
+        shared,
+        next,
+        waiter,
+    }
 }
 
 impl Tail {
@@ -687,10 +742,7 @@ impl<T> Drop for Sender<T> {
 
 impl<T> Receiver<T> {
     /// Locks the next value if there is one.
-    fn recv_ref(
-        &mut self,
-        waiter: Option<(&UnsafeCell<Waiter>, &Waker)>,
-    ) -> Result<RecvGuard<'_, T>, TryRecvError> {
+    fn recv_ref(&mut self, waker: Option<&Waker>) -> Result<RecvGuard<'_, T>, TryRecvError> {
         let idx = (self.next & self.shared.mask as u64) as usize;
 
         // The slot holding the next value to read
@@ -701,7 +753,7 @@ impl<T> Receiver<T> {
 
             // The receiver has read all current values in the channel and there
             // is no waiter to register
-            if waiter.is_none() && next_pos == self.next {
+            if waker.is_none() && next_pos == self.next {
                 return Err(TryRecvError::Empty);
             }
 
@@ -727,11 +779,11 @@ impl<T> Receiver<T> {
 
                 if next_pos == self.next {
                     // Store the waker
-                    if let Some((waiter, waker)) = waiter {
+                    if let Some(waker) = waker {
                         // Safety: called while locked.
                         unsafe {
                             // Only queue if not already queued
-                            waiter.with_mut(|ptr| {
+                            self.waiter.with_mut(|ptr| {
                                 // If there is no waker **or** if the currently
                                 // stored waker references a **different** task,
                                 // track the tasks' waker to be notified on
@@ -874,6 +926,50 @@ impl<T: Clone> Receiver<T> {
         fut.await
     }
 
+    /// Poll the receiver to receive the next value.
+    ///
+    /// This is the low-level implementation of [recv], and can be used when
+    /// [Receiver] is embedded into another future.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::broadcast;
+    /// use futures::future::poll_fn;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx1) = broadcast::channel(16);
+    ///     let mut rx2 = tx.subscribe();
+    ///
+    ///     let a = tokio::spawn(async move {
+    ///         assert_eq!(poll_fn(|cx| rx1.poll_recv(cx)).await.unwrap(), 10);
+    ///         assert_eq!(poll_fn(|cx| rx1.poll_recv(cx)).await.unwrap(), 20);
+    ///     });
+    ///
+    ///     let b = tokio::spawn(async move {
+    ///         assert_eq!(poll_fn(|cx| rx2.poll_recv(cx)).await.unwrap(), 10);
+    ///         assert_eq!(poll_fn(|cx| rx2.poll_recv(cx)).await.unwrap(), 20);
+    ///     });
+    ///
+    ///     tx.send(10).unwrap();
+    ///     tx.send(20).unwrap();
+    ///
+    ///     a.await.expect("task failed");
+    ///     b.await.expect("task failed");
+    /// }
+    /// ```
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Result<T, RecvError>> {
+        let guard = match self.recv_ref(Some(cx.waker())) {
+            Ok(value) => value,
+            Err(TryRecvError::Empty) => return Poll::Pending,
+            Err(TryRecvError::Lagged(n)) => return Poll::Ready(Err(RecvError::Lagged(n))),
+            Err(TryRecvError::Closed) => return Poll::Ready(Err(RecvError::Closed)),
+        };
+
+        Poll::Ready(guard.clone_value().ok_or(RecvError::Closed))
+    }
+
     /// Attempts to return a pending value on this receiver without awaiting.
     ///
     /// This is useful for a flavor of "optimistic check" before deciding to
@@ -922,7 +1018,10 @@ impl<T: Clone> Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
+        // Acquire the tail lock. This is required for safety before accessing
+        // the waiter node.
         let mut tail = self.shared.tail.lock();
+        tail.remove_waiter(&self.waiter, false);
 
         tail.rx_cnt -= 1;
         let until = tail.pos;
@@ -945,26 +1044,18 @@ impl<T> Drop for Receiver<T> {
 
 impl<'a, T> Recv<'a, T> {
     fn new(receiver: &'a mut Receiver<T>) -> Recv<'a, T> {
-        Recv {
-            receiver,
-            waiter: UnsafeCell::new(Waiter {
-                queued: false,
-                waker: None,
-                pointers: linked_list::Pointers::new(),
-                _p: PhantomPinned,
-            }),
-        }
+        Recv { receiver }
     }
 
     /// A custom `project` implementation is used in place of `pin-project-lite`
     /// as a custom drop implementation is needed.
-    fn project(self: Pin<&mut Self>) -> (&mut Receiver<T>, &UnsafeCell<Waiter>) {
+    fn project(self: Pin<&mut Self>) -> &mut Receiver<T> {
         unsafe {
             // Safety: Receiver is Unpin
             is_unpin::<&mut Receiver<T>>();
 
             let me = self.get_unchecked_mut();
-            (me.receiver, &me.waiter)
+            me.receiver
         }
     }
 }
@@ -976,9 +1067,9 @@ where
     type Output = Result<T, RecvError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, RecvError>> {
-        let (receiver, waiter) = self.project();
+        let receiver = self.project();
 
-        let guard = match receiver.recv_ref(Some((waiter, cx.waker()))) {
+        let guard = match receiver.recv_ref(Some(cx.waker())) {
             Ok(value) => value,
             Err(TryRecvError::Empty) => return Poll::Pending,
             Err(TryRecvError::Lagged(n)) => return Poll::Ready(Err(RecvError::Lagged(n))),
@@ -995,20 +1086,7 @@ impl<'a, T> Drop for Recv<'a, T> {
         // the waiter node.
         let mut tail = self.receiver.shared.tail.lock();
 
-        // safety: tail lock is held
-        let queued = self.waiter.with(|ptr| unsafe { (*ptr).queued });
-
-        if queued {
-            // Remove the node
-            //
-            // safety: tail lock is held and the wait node is verified to be in
-            // the list.
-            unsafe {
-                self.waiter.with_mut(|ptr| {
-                    tail.waiters.remove((&mut *ptr).into());
-                });
-            }
-        }
+        tail.remove_waiter(&self.receiver.waiter, true);
     }
 }
 
