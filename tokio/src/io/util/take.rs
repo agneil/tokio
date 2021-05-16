@@ -1,31 +1,30 @@
 use crate::io::{AsyncBufRead, AsyncRead, ReadBuf};
 
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{cmp, io};
 
-pin_project! {
-    /// Stream for the [`take`](super::AsyncReadExt::take) method.
-    #[derive(Debug)]
-    #[must_use = "streams do nothing unless you `.await` or poll them"]
-    #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
-    pub struct Take<R> {
-        #[pin]
-        inner: R,
-        // Add '_' to avoid conflicts with `limit` method.
-        limit_: u64,
-    }
+/// Stream for the [`take`](super::AsyncReadExt::take) method.
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "streams do nothing unless you `.await` or poll them"]
+#[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
+pub struct Take<R> where R: AsyncRead {
+    #[pin]
+    inner: Option<R>,
+    // Add '_' to avoid conflicts with `limit` method.
+    limit_: u64,
 }
 
 pub(super) fn take<R: AsyncRead>(inner: R, limit: u64) -> Take<R> {
     Take {
-        inner,
+        inner: Some(inner),
         limit_: limit,
     }
 }
 
-impl<R: AsyncRead> Take<R> {
+impl<R> Take<R> where R: AsyncRead {
     /// Returns the remaining number of bytes that can be
     /// read before this instance will return EOF.
     ///
@@ -47,7 +46,7 @@ impl<R: AsyncRead> Take<R> {
 
     /// Gets a reference to the underlying reader.
     pub fn get_ref(&self) -> &R {
-        &self.inner
+        self.inner.as_ref().unwrap()
     }
 
     /// Gets a mutable reference to the underlying reader.
@@ -56,7 +55,7 @@ impl<R: AsyncRead> Take<R> {
     /// underlying reader as doing so may corrupt the internal limit of this
     /// `Take`.
     pub fn get_mut(&mut self) -> &mut R {
-        &mut self.inner
+        self.inner.as_mut().unwrap()
     }
 
     /// Gets a pinned mutable reference to the underlying reader.
@@ -65,16 +64,16 @@ impl<R: AsyncRead> Take<R> {
     /// underlying reader as doing so may corrupt the internal limit of this
     /// `Take`.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut R> {
-        self.project().inner
+        self.project().inner.as_pin_mut().unwrap()
     }
 
     /// Consumes the `Take`, returning the wrapped reader.
-    pub fn into_inner(self) -> R {
-        self.inner
+    pub fn into_inner(mut self) -> R {
+        self.inner.take().unwrap()
     }
 }
 
-impl<R: AsyncRead> AsyncRead for Take<R> {
+impl<R> AsyncRead for Take<R> where R: AsyncRead {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -86,7 +85,7 @@ impl<R: AsyncRead> AsyncRead for Take<R> {
 
         let me = self.project();
         let mut b = buf.take(*me.limit_ as usize);
-        ready!(me.inner.poll_read(cx, &mut b))?;
+        ready!(me.inner.as_pin_mut().unwrap().poll_read(cx, &mut b))?;
         let n = b.filled().len();
 
         // We need to update the original ReadBuf
@@ -99,7 +98,7 @@ impl<R: AsyncRead> AsyncRead for Take<R> {
     }
 }
 
-impl<R: AsyncBufRead> AsyncBufRead for Take<R> {
+impl<R> AsyncBufRead for Take<R> where R: AsyncBufRead {
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
         let me = self.project();
 
@@ -108,7 +107,7 @@ impl<R: AsyncBufRead> AsyncBufRead for Take<R> {
             return Poll::Ready(Ok(&[]));
         }
 
-        let buf = ready!(me.inner.poll_fill_buf(cx)?);
+        let buf = ready!(me.inner.as_pin_mut().unwrap().poll_fill_buf(cx)?);
         let cap = cmp::min(buf.len() as u64, *me.limit_) as usize;
         Poll::Ready(Ok(&buf[..cap]))
     }
@@ -118,7 +117,16 @@ impl<R: AsyncBufRead> AsyncBufRead for Take<R> {
         // Don't let callers reset the limit by passing an overlarge value
         let amt = cmp::min(amt as u64, *me.limit_) as usize;
         *me.limit_ -= amt as u64;
-        me.inner.consume(amt);
+        me.inner.as_pin_mut().unwrap().consume(amt);
+    }
+}
+
+#[pinned_drop]
+impl<R> PinnedDrop for Take<R> where R: AsyncRead {
+    fn drop(self: Pin<&mut Self>) {
+        if let Some(inner) = self.project().inner.as_pin_mut() {
+            inner.cancel_pending_reads();
+        }
     }
 }
 

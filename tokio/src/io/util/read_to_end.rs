@@ -1,7 +1,7 @@
 use crate::io::util::vec_with_initialized::{into_read_buf_parts, VecU8, VecWithInitialized};
 use crate::io::AsyncRead;
 
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::io;
 use std::marker::PhantomPinned;
@@ -9,19 +9,18 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pin_project! {
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct ReadToEnd<'a, R: ?Sized> {
-        reader: &'a mut R,
-        buf: VecWithInitialized<&'a mut Vec<u8>>,
-        // The number of bytes appended to buf. This can be less than buf.len() if
-        // the buffer was not empty when the operation was started.
-        read: usize,
-        // Make this future `!Unpin` for compatibility with async trait methods.
-        #[pin]
-        _pin: PhantomPinned,
-    }
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct ReadToEnd<'a, R> where R: AsyncRead + Unpin + ?Sized {
+    reader: &'a mut R,
+    buf: VecWithInitialized<&'a mut Vec<u8>>,
+    // The number of bytes appended to buf. This can be less than buf.len() if
+    // the buffer was not empty when the operation was started.
+    read: usize,
+    // Make this future `!Unpin` for compatibility with async trait methods.
+    #[pin]
+    _pin: PhantomPinned,
 }
 
 pub(crate) fn read_to_end<'a, R>(reader: &'a mut R, buffer: &'a mut Vec<u8>) -> ReadToEnd<'a, R>
@@ -100,7 +99,7 @@ fn poll_read_to_end<V: VecU8, R: AsyncRead + ?Sized>(
 
 impl<A> Future for ReadToEnd<'_, A>
 where
-    A: AsyncRead + ?Sized + Unpin,
+    A: AsyncRead + Unpin + ?Sized,
 {
     type Output = io::Result<usize>;
 
@@ -108,5 +107,13 @@ where
         let me = self.project();
 
         read_to_end_internal(me.buf, Pin::new(*me.reader), me.read, cx)
+    }
+}
+
+#[pinned_drop]
+impl<A> PinnedDrop for ReadToEnd<'_, A> where A: AsyncRead + Unpin + ?Sized {
+    fn drop(self: Pin<&mut Self>) {
+        let me = self.project();
+        Pin::new(&mut **me.reader).cancel_pending_reads();
     }
 }

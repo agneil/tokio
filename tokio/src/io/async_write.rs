@@ -176,6 +176,13 @@ pub trait AsyncWrite {
     fn is_write_vectored(&self) -> bool {
         false
     }
+
+    /// Indicates that any pending write operations running in the background
+    /// and are associated with this object should be cancelled.
+    ///
+    /// This does not mean that the resources should be freed. Future calls to
+    /// [poll_write] can still occur that can use them again.
+    fn cancel_pending_writes(self: Pin<&mut Self>) {}
 }
 
 macro_rules! deref_async_write {

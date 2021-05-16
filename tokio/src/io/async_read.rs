@@ -55,6 +55,13 @@ pub trait AsyncRead {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>>;
+
+    /// Indicates that any pending read operations running in the background and
+    /// are associated with this object should be cancelled.
+    ///
+    /// This does not mean that the resources should be freed. Future calls to
+    /// [poll_write] can still occur that can use them again.
+    fn cancel_pending_reads(self: Pin<&mut Self>) {}
 }
 
 macro_rules! deref_async_read {

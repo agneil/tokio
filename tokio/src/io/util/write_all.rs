@@ -1,6 +1,6 @@
 use crate::io::AsyncWrite;
 
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::io;
 use std::marker::PhantomPinned;
@@ -8,16 +8,15 @@ use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pin_project! {
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct WriteAll<'a, W: ?Sized> {
-        writer: &'a mut W,
-        buf: &'a [u8],
-        // Make this future `!Unpin` for compatibility with async trait methods.
-        #[pin]
-        _pin: PhantomPinned,
-    }
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct WriteAll<'a, W> where W: AsyncWrite + Unpin + ?Sized {
+    writer: &'a mut W,
+    buf: &'a [u8],
+    // Make this future `!Unpin` for compatibility with async trait methods.
+    #[pin]
+    _pin: PhantomPinned,
 }
 
 pub(crate) fn write_all<'a, W>(writer: &'a mut W, buf: &'a [u8]) -> WriteAll<'a, W>
@@ -51,5 +50,13 @@ where
         }
 
         Poll::Ready(Ok(()))
+    }
+}
+
+#[pinned_drop]
+impl<W> PinnedDrop for WriteAll<'_, W> where W: AsyncWrite + Unpin + ?Sized {
+    fn drop(self: Pin<&mut Self>) {
+        let me = self.project();
+        Pin::new(&mut **me.writer).cancel_pending_writes();
     }
 }

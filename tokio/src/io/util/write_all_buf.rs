@@ -1,23 +1,22 @@
 use crate::io::AsyncWrite;
 
 use bytes::Buf;
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::io;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pin_project! {
-    /// A future to write some of the buffer to an `AsyncWrite`.
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct WriteAllBuf<'a, W, B> {
-        writer: &'a mut W,
-        buf: &'a mut B,
-        #[pin]
-        _pin: PhantomPinned,
-    }
+/// A future to write some of the buffer to an `AsyncWrite`.
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct WriteAllBuf<'a, W, B> where W: AsyncWrite + Unpin {
+    writer: &'a mut W,
+    buf: &'a mut B,
+    #[pin]
+    _pin: PhantomPinned,
 }
 
 /// Tries to write some bytes from the given `buf` to the writer in an
@@ -52,5 +51,13 @@ where
         }
 
         Poll::Ready(Ok(()))
+    }
+}
+
+#[pinned_drop]
+impl<W, B> PinnedDrop for WriteAllBuf<'_, W, B> where W: AsyncWrite + Unpin {
+    fn drop(self: Pin<&mut Self>) {
+        let me = self.project();
+        Pin::new(&mut **me.writer).cancel_pending_writes();
     }
 }

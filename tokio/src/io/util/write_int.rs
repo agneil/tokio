@@ -1,7 +1,7 @@
 use crate::io::AsyncWrite;
 
 use bytes::BufMut;
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::io;
 use std::marker::PhantomPinned;
@@ -14,21 +14,24 @@ macro_rules! writer {
         writer!($name, $ty, $writer, size_of::<$ty>());
     };
     ($name:ident, $ty:ty, $writer:ident, $bytes:expr) => {
-        pin_project! {
-            #[doc(hidden)]
-            #[must_use = "futures do nothing unless you `.await` or poll them"]
-            pub struct $name<W> {
-                #[pin]
-                dst: W,
-                buf: [u8; $bytes],
-                written: u8,
-                // Make this future `!Unpin` for compatibility with async trait methods.
-                #[pin]
-                _pin: PhantomPinned,
-            }
+        #[pin_project(PinnedDrop)]
+        #[derive(Debug)]
+        #[doc(hidden)]
+        #[must_use = "futures do nothing unless you `.await` or poll them"]
+        pub struct $name<W> where W: AsyncWrite {
+            #[pin]
+            dst: W,
+            buf: [u8; $bytes],
+            written: u8,
+            // Make this future `!Unpin` for compatibility with async trait methods.
+            #[pin]
+            _pin: PhantomPinned,
         }
 
-        impl<W> $name<W> {
+        impl<W> $name<W>
+        where
+            W: AsyncWrite
+        {
             pub(crate) fn new(w: W, value: $ty) -> Self {
                 let mut writer = Self {
                     buf: [0; $bytes],
@@ -71,25 +74,39 @@ macro_rules! writer {
                 Poll::Ready(Ok(()))
             }
         }
+
+        #[pinned_drop]
+        impl<W> PinnedDrop for $name<W>
+        where
+            W: AsyncWrite,
+        {
+            fn drop(self: Pin<&mut Self>) {
+                let me = self.project();
+                me.dst.cancel_pending_writes();
+            }
+        }
     };
 }
 
 macro_rules! writer8 {
     ($name:ident, $ty:ty) => {
-        pin_project! {
-            #[doc(hidden)]
-            #[must_use = "futures do nothing unless you `.await` or poll them"]
-            pub struct $name<W> {
-                #[pin]
-                dst: W,
-                byte: $ty,
-                // Make this future `!Unpin` for compatibility with async trait methods.
-                #[pin]
-                _pin: PhantomPinned,
-            }
+        #[pin_project(PinnedDrop)]
+        #[derive(Debug)]
+        #[doc(hidden)]
+        #[must_use = "futures do nothing unless you `.await` or poll them"]
+        pub struct $name<W> where W: AsyncWrite {
+            #[pin]
+            dst: W,
+            byte: $ty,
+            // Make this future `!Unpin` for compatibility with async trait methods.
+            #[pin]
+            _pin: PhantomPinned,
         }
 
-        impl<W> $name<W> {
+        impl<W> $name<W>
+        where
+            W: AsyncWrite,
+        {
             pub(crate) fn new(dst: W, byte: $ty) -> Self {
                 Self {
                     dst,
@@ -117,6 +134,17 @@ macro_rules! writer8 {
                     Poll::Ready(Ok(1)) => Poll::Ready(Ok(())),
                     Poll::Ready(Ok(_)) => unreachable!(),
                 }
+            }
+        }
+
+        #[pinned_drop]
+        impl<W> PinnedDrop for $name<W>
+        where
+            W: AsyncWrite,
+        {
+            fn drop(self: Pin<&mut Self>) {
+                let me = self.project();
+                me.dst.cancel_pending_writes();
             }
         }
     };

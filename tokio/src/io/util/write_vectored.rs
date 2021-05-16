@@ -1,23 +1,22 @@
 use crate::io::AsyncWrite;
 
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::io;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{future::Future, io::IoSlice};
 
-pin_project! {
-    /// A future to write a slice of buffers to an `AsyncWrite`.
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct WriteVectored<'a, 'b, W: ?Sized> {
-        writer: &'a mut W,
-        bufs: &'a [IoSlice<'b>],
-        // Make this future `!Unpin` for compatibility with async trait methods.
-        #[pin]
-        _pin: PhantomPinned,
-    }
+/// A future to write a slice of buffers to an `AsyncWrite`.
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct WriteVectored<'a, 'b, W> where W: AsyncWrite + Unpin + ?Sized {
+    writer: &'a mut W,
+    bufs: &'a [IoSlice<'b>],
+    // Make this future `!Unpin` for compatibility with async trait methods.
+    #[pin]
+    _pin: PhantomPinned,
 }
 
 pub(crate) fn write_vectored<'a, 'b, W>(
@@ -43,5 +42,13 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
         let me = self.project();
         Pin::new(&mut *me.writer).poll_write_vectored(cx, me.bufs)
+    }
+}
+
+#[pinned_drop]
+impl<W> PinnedDrop for WriteVectored<'_, '_, W> where W: AsyncWrite + Unpin + ?Sized {
+    fn drop(self: Pin<&mut Self>) {
+        let me = self.project();
+        Pin::new(&mut **me.writer).cancel_pending_writes();
     }
 }

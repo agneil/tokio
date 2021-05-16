@@ -1,6 +1,6 @@
 use crate::io::{AsyncRead, ReadBuf};
 
-use pin_project_lite::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::io;
 use std::marker::PhantomPinned;
@@ -24,20 +24,19 @@ where
     }
 }
 
-pin_project! {
-    /// A future which can be used to easily read available number of bytes to fill
-    /// a buffer.
-    ///
-    /// Created by the [`read`] function.
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct Read<'a, R: ?Sized> {
-        reader: &'a mut R,
-        buf: &'a mut [u8],
-        // Make this future `!Unpin` for compatibility with async trait methods.
-        #[pin]
-        _pin: PhantomPinned,
-    }
+/// A future which can be used to easily read available number of bytes to fill
+/// a buffer.
+///
+/// Created by the [`read`] function.
+#[pin_project(PinnedDrop)]
+#[derive(Debug)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct Read<'a, R> where R: AsyncRead + Unpin + ?Sized {
+    reader: &'a mut R,
+    buf: &'a mut [u8],
+    // Make this future `!Unpin` for compatibility with async trait methods.
+    #[pin]
+    _pin: PhantomPinned,
 }
 
 impl<R> Future for Read<'_, R>
@@ -51,5 +50,13 @@ where
         let mut buf = ReadBuf::new(*me.buf);
         ready!(Pin::new(me.reader).poll_read(cx, &mut buf))?;
         Poll::Ready(Ok(buf.filled().len()))
+    }
+}
+
+#[pinned_drop]
+impl<R> PinnedDrop for Read<'_, R> where R: AsyncRead + Unpin + ?Sized {
+    fn drop(self: Pin<&mut Self>) {
+        let me = self.project();
+        Pin::new(&mut **me.reader).cancel_pending_reads();
     }
 }
