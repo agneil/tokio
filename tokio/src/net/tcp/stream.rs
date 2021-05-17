@@ -953,9 +953,19 @@ impl TcpStream {
     /// [`read`]: fn@crate::io::AsyncReadExt::read
     /// [`AsyncReadExt`]: trait@crate::io::AsyncReadExt
     pub async fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut once = true;
+
         self.io
             .registration()
-            .async_io(Interest::READABLE, || self.io.peek(buf))
+            .async_io(Interest::READABLE, || {
+                if std::mem::take(&mut once) {
+                    println!("once");
+                    return Err(io::Error::new(io::ErrorKind::WouldBlock, "fake block"));
+                }
+
+                println!("again");
+                self.io.peek(buf)
+            })
             .await
     }
 
